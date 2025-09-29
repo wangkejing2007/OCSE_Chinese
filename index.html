@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>僑生考試國文命題趨勢分析儀表板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Parchment -->
+    <!-- Application Structure Plan: The SPA is designed as an interactive dashboard. The primary navigation is a horizontal timeline allowing users to select a specific year. This action updates a detailed information card and highlights the corresponding data on a comparative radar chart. This structure was chosen to facilitate direct year-over-year comparison and exploration of chronological trends, which is the core of the source report. Below this interactive section, thematic summaries are presented in an accordion format to provide high-level insights without cluttering the main view. This separates granular data exploration from summative analysis, creating a clear and intuitive user flow. -->
+    <!-- Visualization & Content Choices: Report Info: Yearly analysis table -> Goal: Compare yearly focus shifts -> Viz: Radar Chart (Chart.js) -> Interaction: Clicking a year on the timeline updates a detail card. The chart displays all years simultaneously for easy comparison. Justification: A radar chart is excellent for comparing multiple entities (years) across several common variables (competencies), visually highlighting how the focus area expands or contracts each year. Report Info: Thematic summaries -> Goal: Organize and present dense text -> Presentation: Accordion component -> Interaction: Click to expand/collapse. Justification: An accordion makes lengthy text digestible and prevents the page from becoming overwhelmingly long, improving user experience. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fdfbf7;
+            color: #4a4a4a;
+        }
+        .active-year {
+            background-color: #c7a47e !important;
+            color: #ffffff !important;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .year-btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .accordion-item.open .accordion-content {
+            max-height: 500px;
+        }
+        .accordion-item.open .accordion-icon {
+            transform: rotate(180deg);
+        }
+        .accordion-icon {
+            transition: transform 0.3s ease-out;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-[#6b4f35]">僑生考試 [國文科] 命題趨勢分析儀表板</h1>
+            <p class="mt-2 text-lg text-gray-600">110-114 學年度趨勢互動分析</p>
+        </header>
+
+        <section id="interactive-dashboard" class="mb-12">
+            <p class="text-center text-gray-700 mb-8 max-w-3xl mx-auto">此互動儀表板旨在視覺化呈現 110 至 114 學年度的學科能力測驗國語文考科命題趨勢。請點擊下方時間軸的任一學年度，深入探索該年度的知識點重心、題幹設計特色，以及非選題的命題方向。右側的雷達圖將同步顯示各年度在不同能力面向上的測驗權重，助您快速掌握考題的演進脈絡。</p>
+            
+            <nav id="year-selector" class="flex justify-center flex-wrap gap-3 mb-8">
+            </nav>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                <div id="details-card" class="bg-white p-6 rounded-lg shadow-lg border border-gray-200 min-h-[400px]">
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
+                    <h3 class="text-xl font-bold text-center text-[#6b4f35] mb-4">各年度命題重點雷達圖</h3>
+                    <div class="chart-container">
+                        <canvas id="trendsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="summary-section">
+            <h2 class="text-2xl md:text-3xl font-bold text-center text-[#6b4f35] mb-4">趨勢總結與備考建議</h2>
+             <p class="text-center text-gray-700 mb-8 max-w-3xl mx-auto">本區塊彙整了跨年度的趨勢分析與核心觀察。您可以在此深入了解命題的三大核心轉變、每年穩定出現的基礎題型，以及針對未來趨勢的具體備考建議。點擊各標題以展開詳細內容。</p>
+            <div id="accordion-container" class="space-y-4 max-w-4xl mx-auto">
+            </div>
+        </section>
+
+        <footer class="text-center mt-12 text-gray-500 text-sm">
+            <p>資料來源：學術考題分析報告</p>
+        </footer>
+    </div>
+
+    <script>
+        const analysisData = {
+            "110": {
+                title: "110 學年度：古典 × 科普跨域整合",
+                knowledge: "古典閱讀（韓非子、夢溪筆談）、科普素養（AI 洪氾預報）、媒體識讀",
+                design: "‣ 創新語境：用「社群推文體」重構古詩互動（Q1）<br>‣ 專文閱讀（Google AI 防洪）",
+                trend: "古典 × 科普跨域，重素養導向，強調**「新舊對話」**",
+                essay: "開放思辨，如「幫助十億人的計畫」類型題，重論述與方案想像"
+            },
+            "111": {
+                title: "111 學年度：回歸經典細讀與詮釋",
+                knowledge: "經典細讀（左傳、禮記）、寓言（郁離子）、文學史（魯迅小說史略）",
+                design: "‣ 經典對讀：〈桃花源記〉×《禮運》<br>‣ 注重語境推敲、詞義精確",
+                trend: "回歸傳統，聚焦經典詮釋、語用、文史知識",
+                essay: "二題 20%＋30%，**議論／抒議並重**，要求條理與思辨"
+            },
+            "112": {
+                title: "112 學年度：經典與公共議題結合",
+                knowledge: "詩詞解讀（蘇軾〈定風波〉）、經典（孟子）、字音字形",
+                design: "‣ 以古證今：〈孟子〉結合**「永續發展」**議題<br>‣ 情境化材料解讀",
+                trend: "穩固基礎，同時滲透**「公共議題語彙」**（永續）",
+                essay: "題目要求與馬斯洛層次理論連結，重抽象概念運用（20%＋30%）"
+            },
+            "113": {
+                title: "113 學年度：強化跨文本對話與比較",
+                knowledge: "經典詩文比較、現代詩對讀、文化常識、歷史人物評議",
+                design: "‣ 對話釐清歧義：〈桃花源記〉「外人」用法<br>‣ 蘇軾×卞之琳詩歌比較",
+                trend: "強化**「跨文本對話」**，重視「誤讀修正、觀點比較」",
+                essay: "題目如〈衣服與我〉，結合文化符號與生活經驗，重表達與思辨"
+            },
+            "114": {
+                title: "114 學年度：科技議題深化至治理層面",
+                knowledge: "語音字形基礎（多題）、生成式 AI、法治與倫理、現代影視文本",
+                design: "‣ 長文專文：AI 與刑事實務（資安、著作權、深偽）<br>‣ 《荀子》教育思想現代詮釋<br>‣ 《青少年哪吒》影視分析",
+                trend: "科技議題深化：從 AI 應用 → AI 治理（法律、倫理）",
+                essay: "資訊量大，偏向**「批判思維」**題目如〈記憶中的味道〉，重生活經驗描寫與修辭結構完整性（20%＋30%）"
+            }
+        };
+
+        const chartData = {
+            labels: ["古典素養", "科技素養", "公共議題", "跨文本比較", "語文基礎"],
+            datasets: [
+                {
+                    label: '110',
+                    data: [3, 4, 2, 2, 3],
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(255, 99, 132, 1)'
+                },
+                {
+                    label: '111',
+                    data: [5, 1, 1, 4, 4],
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(54, 162, 235, 1)'
+                },
+                {
+                    label: '112',
+                    data: [4, 1, 4, 3, 5],
+                    backgroundColor: 'rgba(255, 206, 86, 0.2)',
+                    borderColor: 'rgba(255, 206, 86, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(255, 206, 86, 1)'
+                },
+                {
+                    label: '113',
+                    data: [3, 1, 2, 5, 4],
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(75, 192, 192, 1)'
+                },
+                {
+                    label: '114',
+                    data: [3, 5, 5, 3, 5],
+                    backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(153, 102, 255, 1)'
+                }
+            ]
+        };
+
+        const accordionData = [
+            {
+                title: "三大差異與趨勢總結",
+                content: `
+                    <h4 class="font-semibold text-lg mb-2 text-amber-700">跨域議題的深化：從「AI 應用」到「AI 治理」</h4>
+                    <p class="mb-4">110 年以 Google AI 洪氾預報做科普素養閱讀（技術理解）；到 114 年正面切入生成式 AI 的資安、個資、著作權與深偽等法律與社會風險（治理層面）。顯示命題由**「科技常識」→「公共治理／法治素養」**的明顯演進。</p>
+                    <h4 class="font-semibold text-lg mb-2 text-amber-700">題幹語境愈趨多元：由「情境換置」到「學術式長文」</h4>
+                    <p class="mb-4">110 年以「社群推文體」包裝古典詩（創意語境轉換）；113 年常用「訪談／對話」釐清歧義與誤讀（語用意識）；114 年更多「論述型摘要」與「專文節錄」進題（概念抽取與批判）。</p>
+                    <h4 class="font-semibold text-lg mb-2 text-amber-700">經典對讀與比較閱讀常態化</h4>
+                    <p>111 年〈桃花源記〉×《禮運》對讀（理想社會）；112 年以〈孟子〉接軌現代治理語彙（永續）；113 年蘇詩×現代詩對照視角哲學（觀點／主客互動）。此一脈絡連續擴張，要求考生能在不同文本間建立概念連結與批判。</p>
+                `
+            },
+            {
+                title: "命題面向的穩定「基本盤」",
+                content: `
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><strong>語音、字形、字義與成語語用：</strong>每年皆為前段必考（例：111 年 Q1，113 年 Q1，114 年 Q1～Q5 多題檢核）。</li>
+                        <li><strong>經典素養：</strong>史傳、論孟、宋元明清散文、詩詞曲等持續出題，且常與現代評論並列檢核（110–114 均可見）。</li>
+                        <li><strong>非選題：</strong>皆要求條理清楚、能以生活或社會議題進行說理抒寫（113〈衣服與我〉、114〈記憶中的味道〉等），評量**「結構＋觀點＋語言」**整體表現。</li>
+                    </ul>
+                `
+            },
+            {
+                title: "備考建議（對應以上差異）",
+                content: `
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><strong>經典 × 現代的雙向連結：</strong>讀經典時練習把概念投影到現代議題（法治、媒體、AI、永續），同時把現代專文拉回經典語境比較。</li>
+                        <li><strong>強化長文訊息抽取與論證：</strong>練「段旨／論點－論據－推論」標示，避免只抓細節不見論證主線。</li>
+                        <li><strong>語用與語境判讀：</strong>留意「詞義在語境的轉變」與「誤讀修正」類題幹（如 113 年「外人」）。</li>
+                        <li><strong>非選題寫作：</strong>以**「主題—段落結構—例證—反思」**的骨架練習，同時導入生活經驗或公共議題，呼應 113、114 年的題向。</li>
+                    </ul>
+                `
+            }
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const yearSelector = document.getElementById('year-selector');
+            const detailsCard = document.getElementById('details-card');
+            const accordionContainer = document.getElementById('accordion-container');
+            const years = Object.keys(analysisData);
+
+            function updateDetails(year) {
+                const data = analysisData[year];
+                detailsCard.innerHTML = `
+                    <h3 class="text-xl font-bold mb-4 text-[#6b4f35]">${data.title}</h3>
+                    <div class="space-y-4 text-gray-700">
+                        <div>
+                            <h4 class="font-semibold text-amber-700">知識點重心</h4>
+                            <p>${data.knowledge}</p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-amber-700">題幹設計特色</h4>
+                            <p>${data.design.replace(/\n/g, '<br>')}</p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-amber-700">命題趨勢</h4>
+                            <p>${data.trend.replace(/\*\*/g, '<strong>')}</p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-amber-700">非選題特色</h4>
+                            <p>${data.essay.replace(/\*\*/g, '<strong>')}</p>
+                        </div>
+                    </div>
+                `;
+                
+                document.querySelectorAll('.year-btn').forEach(btn => {
+                    btn.classList.toggle('active-year', btn.dataset.year === year);
+                });
+            }
+
+            years.forEach(year => {
+                const button = document.createElement('button');
+                button.textContent = `${year} 學年度`;
+                button.dataset.year = year;
+                button.className = 'year-btn bg-white text-[#947453] font-semibold py-2 px-4 border border-[#d3bda9] rounded-full shadow-sm hover:bg-amber-50';
+                button.addEventListener('click', () => updateDetails(year));
+                yearSelector.appendChild(button);
+            });
+            
+            accordionData.forEach((item, index) => {
+                const accordionItem = document.createElement('div');
+                accordionItem.className = 'accordion-item bg-white border border-gray-200 rounded-lg overflow-hidden';
+                accordionItem.innerHTML = `
+                    <button class="accordion-header w-full text-left p-4 font-semibold text-lg text-[#6b4f35] flex justify-between items-center bg-amber-50 hover:bg-amber-100 transition-colors">
+                        <span>${item.title}</span>
+                        <span class="accordion-icon text-2xl text-amber-600">▾</span>
+                    </button>
+                    <div class="accordion-content p-4 border-t border-gray-200 text-gray-700">
+                        ${item.content}
+                    </div>
+                `;
+                accordionContainer.appendChild(accordionItem);
+
+                const header = accordionItem.querySelector('.accordion-header');
+                header.addEventListener('click', () => {
+                    accordionItem.classList.toggle('open');
+                });
+            });
+
+
+            const ctx = document.getElementById('trendsChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'radar',
+                data: chartData,
+                options: {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    scales: {
+                        r: {
+                            angleLines: {
+                                color: '#e2e8f0'
+                            },
+                            grid: {
+                                color: '#e2e8f0'
+                            },
+                            pointLabels: {
+                                font: {
+                                    size: 13,
+                                    weight: 'bold'
+                                },
+                                color: '#4a4a4a'
+                            },
+                            ticks: {
+                                backdropColor: '#fdfbf7',
+                                color: '#718096',
+                                stepSize: 1,
+                                font: {
+                                    size: 10
+                                }
+                            },
+                            suggestedMin: 0,
+                            suggestedMax: 5
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            updateDetails('114');
+        });
+    </script>
+</body>
+</html>
